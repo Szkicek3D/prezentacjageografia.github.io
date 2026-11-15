@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktywna Prezentacja 3D - Afryka</title>
+    <!-- Biblioteka Globe.gl do kinowej Ziemi 3D i granic krajów -->
+    <script src="https://unpkg.com/globe.gl"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #020617;
+            color: #f8fafc;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+        }
+        #globeViz {
+            width: 100vw;
+            height: 100vh;
+        }
+        /* Karta z treścią slajdu na dole ekranu */
+        .ui-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 500px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 16px;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+            transition: all 0.4s ease;
+        }
+        h2 {
+            margin: 0 0 8px 0;
+            font-size: 1.25rem;
+            color: #38bdf8;
+        }
+        p {
+            margin: 0 0 15px 0;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #cbd5e1;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            flex: 1;
+            background: #38bdf8;
+            color: #020617;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        button:active { opacity: 0.8; }
+        /* Etykieta z flagą nad krajem */
+        .country-pin {
+            background: rgba(15, 23, 42, 0.9);
+            border: 2px solid #38bdf8;
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="globeViz"></div>
+
+    <div class="ui-overlay">
+        <h2 id="slide-title">Planeta Ziemia</h2>
+        <p id="slide-desc">Kliknij „Dalej”, aby wykonać obrót i przenieść się do wybranego kraju w Afryce.</p>
+        <div class="controls">
+            <button onclick="prevStep()">Wstecz</button>
+            <button onclick="nextStep()">Dalej</button>
+        </div>
+    </div>
+
+    <script>
+        // --- KONFIGURACJA TWOJEGO KRAJU (zmień tutaj, gdy poznasz temat!) ---
+        const TARGET_COUNTRY = {
+            iso: 'EGY',              // Kod kraju ISO (np. EGY = Egipt, KEN = Kenia, NGA = Nigeria, ZAF = RPA, MAR = Maroko)
+            name: 'Egipt',           // Nazwa wyświetlana przy fladze
+            flagUrl: 'https://flagcdn.com/w80/eg.png', // Kod kraju małymi literami (eg, ke, ng, za, ma)
+            lat: 26.8206,            // Szerokość geograficzna środka kraju
+            lng: 30.8025             // Długość geograficzna środka kraju
+        };
+
+        let countriesData = [];
+        let step = 0;
+
+        // Inicjalizacja globusa 3D
+        const world = Globe()
+            (document.getElementById('globeViz'))
+            .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+            .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+            .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
+            .pointOfView({ lat: 10, lng: 20, altitude: 2.5 });
+
+        // Włączenie delikatnego obrotu na start
+        world.controls().autoRotate = true;
+        world.controls().autoRotateSpeed = 0.8;
+
+        // Pobranie gotowych granic wszystkich krajów świata
+        fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson')
+            .then(res => res.json())
+            .then(data => {
+                countriesData = data.features;
+            });
+
+        function updateScene() {
+            const title = document.getElementById('slide-title');
+            const desc = document.getElementById('slide-desc');
+
+            if (step === 0) {
+                // Widok początkowy z kosmosu
+                title.innerText = "Planeta Ziemia";
+                desc.innerText = "Kliknij „Dalej”, aby wykonać obrót i przenieść się do wybranego kraju.";
+                world.polygonsData([]); // Ukryj granice
+                world.htmlElementsData([]); // Ukryj flagę
+                world.controls().autoRotate = true;
+                world.pointOfView({ lat: 10, lng: 20, altitude: 2.5 }, 1500);
+            } 
+            else if (step === 1) {
+                // KROK 1: Pełny obrót 360° i zbliżenie na kraj + rysowanie granic i flagi
+                title.innerText = `Kierunek: ${TARGET_COUNTRY.name}`;
+                desc.innerText = "Zbliżenie na region, wyznaczenie granic państwowych oraz lokalizacja.";
+                world.controls().autoRotate = false;
+
+                // Najpierw obrót o 180 stopni w drugą stronę (efekt pełnego okrążenia Ziemi)
+                world.pointOfView({ lat: 15, lng: TARGET_COUNTRY.lng - 180, altitude: 2.2 }, 1200);
+
+                // Po 1.2 sekundy dokończenie obrotu 360° i kinowy najazd na kraj
+                setTimeout(() => {
+                    world.pointOfView({ 
+                        lat: TARGET_COUNTRY.lat, 
+                        lng: TARGET_COUNTRY.lng, 
+                        altitude: 0.9 
+                    }, 1800);
+
+                    // Rysowanie podświetlonych granic kraju
+                    const selected = countriesData.filter(d => d.properties.ADM0_A3 === TARGET_COUNTRY.iso);
+                    world
+                        .polygonsData(selected)
+                        .polygonCapColor(() => 'rgba(56, 189, 248, 0.25)')
+                        .polygonSideColor(() => 'rgba(56, 189, 248, 0.6)')
+                        .polygonStrokeColor(() => '#38bdf8')
+                        .polygonAltitude(0.02);
+
+                    // Pojawienie się flagi po zakończeniu zbliżenia
+                    setTimeout(() => {
+                        world
+                            .htmlElementsData([TARGET_COUNTRY])
+                            .htmlElement(d => {
+                                const el = document.createElement('div');
+                                el.innerHTML = `<div class="country-pin"><img src="${d.flagUrl}" width="24"> ${d.name}</div>`;
+                                return el;
+                            });
+                    }, 1400);
+                }, 1200);
+            }
+            else if (step === 2) {
+                // Kolejny slajd (np. dane o kraju)
+                title.innerText = "Środowisko i gospodarka";
+                desc.innerText = "Tutaj wpiszesz informacje z podręcznika, gdy tylko poznasz temat.";
+            }
+        }
+
+        function nextStep() {
+            if (step < 2) {
+                step++;
+                updateScene();
+            }
+        }
+
+        function prevStep() {
+            if (step > 0) {
+                step--;
+                updateScene();
+            }
+        }
+    </script>
+</body>
+</html>
