@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interaktywna Prezentacja 3D - Afryka</title>
-    <!-- Biblioteka Globe.gl do kinowej Ziemi 3D i granic krajów -->
     <script src="https://unpkg.com/globe.gl"></script>
     <style>
         body {
@@ -18,6 +17,31 @@
         #globeViz {
             width: 100vw;
             height: 100vh;
+            transition: opacity 0.8s ease;
+        }
+        /* Pełnoekranowy widok po "wejściu" w kraj */
+        #country-interior {
+            position: fixed;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease, transform 6s ease-out;
+            transform: scale(1.15);
+            z-index: 5;
+        }
+        #country-interior.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+        /* Przyciemnienie u dołu zdjęcia dla czytelności tekstu */
+        #country-interior::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(2, 6, 23, 0.95) 15%, rgba(2, 6, 23, 0.2) 60%, rgba(2, 6, 23, 0.5) 100%);
         }
         /* Karta z treścią slajdu na dole ekranu */
         .ui-overlay {
@@ -63,7 +87,6 @@
             cursor: pointer;
         }
         button:active { opacity: 0.8; }
-        /* Etykieta z flagą nad krajem */
         .country-pin {
             background: rgba(15, 23, 42, 0.9);
             border: 2px solid #38bdf8;
@@ -87,6 +110,8 @@
 <body>
 
     <div id="globeViz"></div>
+    <!-- Warstwa wnętrza kraju (zdjęcie w wysokiej jakości) -->
+    <div id="country-interior"></div>
 
     <div class="ui-overlay">
         <h2 id="slide-title">Planeta Ziemia</h2>
@@ -98,19 +123,21 @@
     </div>
 
     <script>
-        // --- KONFIGURACJA TWOJEGO KRAJU (zmień tutaj, gdy poznasz temat!) ---
+        // --- KONFIGURACJA TWOJEGO KRAJU ---
         const TARGET_COUNTRY = {
-            iso: 'EGY',              // Kod kraju ISO (np. EGY = Egipt, KEN = Kenia, NGA = Nigeria, ZAF = RPA, MAR = Maroko)
-            name: 'Egipt',           // Nazwa wyświetlana przy fladze
-            flagUrl: 'https://flagcdn.com/w80/eg.png', // Kod kraju małymi literami (eg, ke, ng, za, ma)
-            lat: 26.8206,            // Szerokość geograficzna środka kraju
-            lng: 30.8025             // Długość geograficzna środka kraju
+            iso: 'EGY',
+            name: 'Egipt',
+            flagUrl: 'https://flagcdn.com/w80/eg.png',
+            lat: 26.8206,
+            lng: 30.8025,
+            // Zdjęcie krajobrazu po "wejściu" do kraju (tu: Egipt / Piramidy i Nil z Unsplash)
+            interiorImage: 'https://images.unsplash.com/photo-1539650116574-8efeb43e2750?auto=format&fit=crop&w=1600&q=80'
         };
 
         let countriesData = [];
         let step = 0;
+        const maxSteps = 3;
 
-        // Inicjalizacja globusa 3D
         const world = Globe()
             (document.getElementById('globeViz'))
             .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
@@ -118,11 +145,9 @@
             .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
             .pointOfView({ lat: 10, lng: 20, altitude: 2.5 });
 
-        // Włączenie delikatnego obrotu na start
         world.controls().autoRotate = true;
         world.controls().autoRotateSpeed = 0.8;
 
-        // Pobranie gotowych granic wszystkich krajów świata
         fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson')
             .then(res => res.json())
             .then(data => {
@@ -132,26 +157,28 @@
         function updateScene() {
             const title = document.getElementById('slide-title');
             const desc = document.getElementById('slide-desc');
+            const interior = document.getElementById('country-interior');
+
+            // Reset widoku wnętrza przy cofaniu
+            if (step < 3) {
+                interior.classList.remove('active');
+            }
 
             if (step === 0) {
-                // Widok początkowy z kosmosu
                 title.innerText = "Planeta Ziemia";
                 desc.innerText = "Kliknij „Dalej”, aby wykonać obrót i przenieść się do wybranego kraju.";
-                world.polygonsData([]); // Ukryj granice
-                world.htmlElementsData([]); // Ukryj flagę
+                world.polygonsData([]);
+                world.htmlElementsData([]);
                 world.controls().autoRotate = true;
                 world.pointOfView({ lat: 10, lng: 20, altitude: 2.5 }, 1500);
             } 
             else if (step === 1) {
-                // KROK 1: Pełny obrót 360° i zbliżenie na kraj + rysowanie granic i flagi
                 title.innerText = `Kierunek: ${TARGET_COUNTRY.name}`;
                 desc.innerText = "Zbliżenie na region, wyznaczenie granic państwowych oraz lokalizacja.";
                 world.controls().autoRotate = false;
 
-                // Najpierw obrót o 180 stopni w drugą stronę (efekt pełnego okrążenia Ziemi)
                 world.pointOfView({ lat: 15, lng: TARGET_COUNTRY.lng - 180, altitude: 2.2 }, 1200);
 
-                // Po 1.2 sekundy dokończenie obrotu 360° i kinowy najazd na kraj
                 setTimeout(() => {
                     world.pointOfView({ 
                         lat: TARGET_COUNTRY.lat, 
@@ -159,7 +186,6 @@
                         altitude: 0.9 
                     }, 1800);
 
-                    // Rysowanie podświetlonych granic kraju
                     const selected = countriesData.filter(d => d.properties.ADM0_A3 === TARGET_COUNTRY.iso);
                     world
                         .polygonsData(selected)
@@ -168,7 +194,6 @@
                         .polygonStrokeColor(() => '#38bdf8')
                         .polygonAltitude(0.02);
 
-                    // Pojawienie się flagi po zakończeniu zbliżenia
                     setTimeout(() => {
                         world
                             .htmlElementsData([TARGET_COUNTRY])
@@ -181,14 +206,37 @@
                 }, 1200);
             }
             else if (step === 2) {
-                // Kolejny slajd (np. dane o kraju)
+                // Powrót do widoku z orbity (jeśli ktoś wraca ze slajdu 3)
+                world.pointOfView({ 
+                    lat: TARGET_COUNTRY.lat, 
+                    lng: TARGET_COUNTRY.lng, 
+                    altitude: 0.9 
+                }, 1200);
                 title.innerText = "Środowisko i gospodarka";
-                desc.innerText = "Tutaj wpiszesz informacje z podręcznika, gdy tylko poznasz temat.";
+                desc.innerText = "Tutaj wpiszesz informacje z podręcznika. Kliknij „Dalej”, aby zanurkować w głąb kraju!";
+            }
+            else if (step === 3) {
+                // KROK 3: Mocne zbliżenie (nurkowanie w głąb kraju) i wejście na poziom ziemi
+                title.innerText = `Wewnątrz: ${TARGET_COUNTRY.name}`;
+                desc.innerText = "Jesteśmy na miejscu! Tutaj możesz opowiedzieć o kulturze, krajobrazie lub najważniejszych atrakcjach.";
+                
+                // 1. Kamera nurkuje tuż nad powierzchnię globusa (altitude: 0.04)
+                world.pointOfView({ 
+                    lat: TARGET_COUNTRY.lat, 
+                    lng: TARGET_COUNTRY.lng, 
+                    altitude: 0.04 
+                }, 1400);
+
+                // 2. W momencie, gdy kamera "przebija" chmury, płynnie wchodzi krajobraz kraju
+                setTimeout(() => {
+                    interior.style.backgroundImage = `url('${TARGET_COUNTRY.interiorImage}')`;
+                    interior.classList.add('active');
+                }, 1000);
             }
         }
 
         function nextStep() {
-            if (step < 2) {
+            if (step < maxSteps) {
                 step++;
                 updateScene();
             }
