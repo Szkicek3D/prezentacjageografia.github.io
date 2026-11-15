@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interaktywna Prezentacja 3D - Afryka</title>
+    <!-- Biblioteka Globe.gl -->
     <script src="https://unpkg.com/globe.gl"></script>
+    <!-- Biblioteka PeerJS do połączeń bezpośrednich na żywo -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -19,7 +22,6 @@
             height: 100vh;
             transition: opacity 0.8s ease;
         }
-        /* Pełnoekranowy widok po "wejściu" w kraj */
         #country-interior {
             position: fixed;
             inset: 0;
@@ -65,14 +67,15 @@
             color: #38bdf8;
         }
         p {
-            margin: 0 0 15px 0;
+            margin: 0 0 10px 0;
             font-size: 0.95rem;
             line-height: 1.5;
             color: #cbd5e1;
         }
         .controls {
-            display: flex;
+            display: none; /* Domyślnie ukryte dla klasy */
             gap: 10px;
+            margin-top: 15px;
         }
         button {
             flex: 1;
@@ -86,6 +89,15 @@
             cursor: pointer;
         }
         button:active { opacity: 0.8; }
+        .live-badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.15);
+            padding: 3px 8px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
         .country-pin {
             background: rgba(15, 23, 42, 0.9);
             border: 2px solid #38bdf8;
@@ -112,33 +124,52 @@
     <div id="country-interior"></div>
 
     <div class="ui-overlay">
+        <div class="live-badge" id="status-badge">🔴 P2P • Oczekiwanie na połączenie...</div>
         <h2 id="slide-title">Planeta Ziemia</h2>
-        <p id="slide-desc">Kliknij „Dalej”, aby wykonać obrót i przenieść się do wybranego kraju w Afryce.</p>
-        <div class="controls">
-            <button onclick="prevStep()">Wstecz</button>
-            <button onclick="nextStep()">Dalej</button>
+        <p id="slide-desc">Trwa łączenie z prezentacją...</p>
+        
+        <!-- Przyciski widoczne tylko dla Ciebie -->
+        <div class="controls" id="presenter-controls">
+            <button onclick="changeStep(-1)">Wstecz</button>
+            <button onclick="changeStep(1)">Dalej</button>
         </div>
     </div>
 
     <script>
+        // STAŁE KONFIGURACJE
+        const SECRET_PIN = '1234'; // Twój tajny PIN w linku
+        const MASTER_PEER_ID = 'geografia-afryka-prowadzacy-unikalny-id-9988'; // Unikalny identyfikator pokoju
+
         const TARGET_COUNTRY = {
             iso: 'EGY',
             name: 'Egipt',
             flagUrl: 'https://flagcdn.com/w80/eg.png',
             lat: 26.8206,
             lng: 30.8025,
-            // Pewne zdjęcie z Wikimedia Commons (Piramidy w Gizie)
             interiorImage: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/All_Gizah_Pyramids.jpg/1280px-All_Gizah_Pyramids.jpg'
         };
 
-        // Wstępne załadowanie zdjęcia w tle, żeby było gotowe od razu
         const preloadImg = new Image();
         preloadImg.src = TARGET_COUNTRY.interiorImage;
 
         let countriesData = [];
-        let step = 0;
+        let currentStep = 0;
         const maxSteps = 3;
+        let peer = null;
+        let connections = []; // Lista połączeń (dla prezentera)
+        let hostConnection = null; // Połączenie do szefa (dla ucznia)
 
+        // Sprawdzamy czy to Ty (Prezenter)
+        const urlParams = new URLSearchParams(window.location.search);
+        const isPresenter = urlParams.get('pilot'] === SECRET_PIN || urlParams.get('pilot') === SECRET_PIN; // zabezpieczenie literowe
+
+        if (urlParams.get('pilot') === SECRET_PIN) {
+            document.getElementById('presenter-controls').style.display = 'flex';
+            document.getElementById('status-badge').innerText = '👑 TRYB PREZENTERA (Sterujesz klasą)';
+            document.getElementById('status-badge').style.color = '#fbbf24';
+        }
+
+        // Inicjalizacja globusa 3D
         const world = Globe()
             (document.getElementById('globeViz'))
             .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
@@ -151,11 +182,10 @@
 
         fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson')
             .then(res => res.json())
-            .then(data => {
-                countriesData = data.features;
-            });
+            .then(data => { countriesData = data.features; });
 
-        function updateScene() {
+        // Funkcja renderująca widok na ekranie
+        function renderScene(step) {
             const title = document.getElementById('slide-title');
             const desc = document.getElementById('slide-desc');
             const interior = document.getElementById('country-interior');
@@ -166,7 +196,7 @@
 
             if (step === 0) {
                 title.innerText = "Planeta Ziemia";
-                desc.innerText = "Kliknij „Dalej”, aby wykonać obrót i przenieść się do wybranego kraju.";
+                desc.innerText = isPresenter ? "Kliknij „Dalej”, aby przenieść wszystkich do wybranego kraju." : "Prezentacja gotowa. Oczekiwanie na start...";
                 world.polygonsData([]);
                 world.htmlElementsData([]);
                 world.controls().autoRotate = true;
@@ -180,11 +210,7 @@
                 world.pointOfView({ lat: 15, lng: TARGET_COUNTRY.lng - 180, altitude: 2.2 }, 1200);
 
                 setTimeout(() => {
-                    world.pointOfView({ 
-                        lat: TARGET_COUNTRY.lat, 
-                        lng: TARGET_COUNTRY.lng, 
-                        altitude: 0.9 
-                    }, 1800);
+                    world.pointOfView({ lat: TARGET_COUNTRY.lat, lng: TARGET_COUNTRY.lng, altitude: 0.9 }, 1800);
 
                     const selected = countriesData.filter(d => d.properties.ADM0_A3 === TARGET_COUNTRY.iso);
                     world
@@ -206,26 +232,16 @@
                 }, 1200);
             }
             else if (step === 2) {
-                world.pointOfView({ 
-                    lat: TARGET_COUNTRY.lat, 
-                    lng: TARGET_COUNTRY.lng, 
-                    altitude: 0.9 
-                }, 1200);
+                world.pointOfView({ lat: TARGET_COUNTRY.lat, lng: TARGET_COUNTRY.lng, altitude: 0.9 }, 1200);
                 title.innerText = "Środowisko i gospodarka";
-                desc.innerText = "Tutaj wpiszesz informacje z podręcznika. Kliknij „Dalej”, aby zanurkować w głąb kraju!";
+                desc.innerText = "Informacje z podręcznika o tym państwie.";
             }
             else if (step === 3) {
                 title.innerText = `Wewnątrz: ${TARGET_COUNTRY.name}`;
-                desc.innerText = "Jesteśmy na miejscu! Tutaj możesz opowiedzieć o kulturze, krajobrazie lub najważniejszych atrakcjach.";
+                desc.innerText = "Krajobraz, kultura i najciekawsze miejsca regionu.";
                 
-                // Bezpieczne, mocne zbliżenie kamery
-                world.pointOfView({ 
-                    lat: TARGET_COUNTRY.lat, 
-                    lng: TARGET_COUNTRY.lng, 
-                    altitude: 0.12 
-                }, 1200);
+                world.pointOfView({ lat: TARGET_COUNTRY.lat, lng: TARGET_COUNTRY.lng, altitude: 0.12 }, 1200);
 
-                // Płynne przejście w widok krajobrazu
                 setTimeout(() => {
                     interior.style.backgroundImage = `url('${TARGET_COUNTRY.interiorImage}')`;
                     interior.classList.add('active');
@@ -233,19 +249,77 @@
             }
         }
 
-        function nextStep() {
-            if (step < maxSteps) {
-                step++;
-                updateScene();
-            }
+        // --- KONFIGURACJA SIECI P2P (PeerJS) ---
+        if (isPresenter) {
+            // Twój telefon zakłada "pokój" jako główny serwer
+            peer = new Peer(MASTER_PEER_ID);
+
+            peer.on('open', () => {
+                document.getElementById('status-badge').innerText = '👑 PILOT AKTYWNY (Połączono z siecią)';
+                renderScene(currentStep);
+            });
+
+            // Gdy ktoś z klasy wchodzi na stronę, podłącza się do Ciebie
+            peer.on('connection', (conn) => {
+                connections.push(conn);
+                // Wyślij mu aktualny krok na powitanie
+                conn.on('open', () => {
+                    conn.send({ step: currentStep });
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.error("Błąd pilota:", err);
+                // Jeśli ID jest zajęte, spróbuj otworzyć bez stałego ID lub zresetuj
+            });
+
+        } else {
+            // Telefon ucznia łączy się do Twojego telefonu
+            peer = new Peer();
+
+            peer.on('open', () => {
+                const conn = peer.connect(MASTER_PEER_ID);
+                hostConnection = conn;
+
+                conn.on('open', () => {
+                    document.getElementById('status-badge').innerText = '🟢 POŁĄCZONO NA ŻYWO';
+                });
+
+                // Odbieranie zmian slajdów od Ciebie
+                conn.on('data', (data) => {
+                    if (typeof data.step === 'number') {
+                        currentStep = data.step;
+                        renderScene(currentStep);
+                    }
+                });
+
+                conn.on('close', () => {
+                    document.getElementById('status-badge').innerText = '🔴 ROZŁĄCZONO (Oczekiwanie...)';
+                });
+            });
         }
 
-        function prevStep() {
-            if (step > 0) {
-                step--;
-                updateScene();
-            }
+        // Funkcja zmiany slajdu (tylko dla Ciebie)
+        function changeStep(delta) {
+            if (!isPresenter) return;
+            
+            currentStep += delta;
+            if (currentStep < 0) currentStep = 0;
+            if (currentStep > maxSteps) currentStep = maxSteps;
+
+            // Renderuj u siebie
+            renderScene(currentStep);
+
+            // Rozślij nowy krok do wszystkich połączonych uczniów w ułamku sekundy!
+            connections.forEach(conn => {
+                if (conn.open) {
+                    conn.send({ step: currentStep });
+                }
+            });
         }
+
+        // Startowy widok
+        renderScene(0);
     </script>
 </body>
 </html>
