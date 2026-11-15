@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interaktywna Prezentacja 3D - Afryka</title>
     <script src="https://unpkg.com/globe.gl"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Biblioteka Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body {
             margin: 0;
@@ -122,7 +123,7 @@
     <div id="country-interior"></div>
 
     <div class="ui-overlay">
-        <div class="live-badge" id="status-badge">🟡 Szukanie prowadzącego...</div>
+        <div class="live-badge" id="status-badge">🟢 Łączenie z bazą...</div>
         <h2 id="slide-title">Planeta Ziemia</h2>
         <p id="slide-desc">Ładowanie widoku 3D...</p>
         
@@ -133,8 +134,12 @@
     </div>
 
     <script>
+        // --- KONFIGURACJA SUPABASE ---
         const SECRET_PIN = '1234'; 
-        const MASTER_PEER_ID = 'geografia-afryka-szkicek3d-live-2026';
+        const SUPABASE_URL = 'https://plzaadfybmpslfrohiek.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_qRKOTGcUUmG5g-z4HE3siA_3NpRoLw4';
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const TARGET_COUNTRY = {
             iso: 'EGY',
@@ -151,17 +156,17 @@
         let countriesData = [];
         let currentStep = 0;
         const maxSteps = 3;
-        let peer = null;
-        let connections = []; 
-        let hostConnection = null; 
 
         const urlParams = new URLSearchParams(window.location.search);
         const isPresenter = urlParams.get('pilot') === SECRET_PIN;
 
         if (isPresenter) {
             document.getElementById('presenter-controls').style.display = 'flex';
-            document.getElementById('status-badge').innerText = '👑 Uruchamianie pilota...';
+            document.getElementById('status-badge').innerText = '👑 TRYB PILOTA AKTYWNY';
             document.getElementById('status-badge').style.color = '#fbbf24';
+        } else {
+            document.getElementById('status-badge').innerText = '🟢 POŁĄCZONO NA ŻYWO';
+            document.getElementById('status-badge').style.color = '#4ade80';
         }
 
         const world = Globe()
@@ -244,82 +249,44 @@
 
         renderScene(0);
 
-        function updatePresenterCount() {
-            const activeCount = connections.filter(c => c.open).length;
-            document.getElementById('status-badge').innerText = `👑 PILOT AKTYWNY (Widzów: ${activeCount})`;
-        }
+        // --- POBIERANIE STANU Z BAZY CO 1 SEKUNDĘ ---
+        async function checkServerStep() {
+            const { data, error } = await supabaseClient
+                .from('presentation_state')
+                .select('step')
+                .eq('id', 'main')
+                .single();
 
-        // --- KONFIGURACJA PEERJS ---
-        if (isPresenter) {
-            peer = new Peer(MASTER_PEER_ID);
-
-            peer.on('open', () => {
-                updatePresenterCount();
-            });
-
-            peer.on('connection', (conn) => {
-                connections.push(conn);
-                conn.on('open', () => {
-                    conn.send({ step: currentStep });
-                    updatePresenterCount();
-                });
-                conn.on('close', updatePresenterCount);
-            });
-
-            peer.on('error', (err) => {
-                if (err.type === 'unavailable-id') {
-                    document.getElementById('status-badge').innerText = '👑 PILOT (Zajęty - odśwież za 15s)';
+            if (!error && data && typeof data.step === 'number') {
+                if (data.step !== currentStep) {
+                    currentStep = data.step;
+                    renderScene(currentStep);
                 }
-            });
-
-        } else {
-            peer = new Peer();
-
-            function connectToHost() {
-                if (hostConnection && hostConnection.open) return;
-
-                const conn = peer.connect(MASTER_PEER_ID, { reliable: true });
-                hostConnection = conn;
-
-                conn.on('open', () => {
-                    document.getElementById('status-badge').innerText = '🟢 POŁĄCZONO NA ŻYWO';
-                    document.getElementById('status-badge').style.color = '#4ade80';
-                });
-
-                conn.on('data', (data) => {
-                    if (typeof data.step === 'number' && data.step !== currentStep) {
-                        currentStep = data.step;
-                        renderScene(currentStep);
-                    }
-                });
-
-                conn.on('close', () => {
-                    document.getElementById('status-badge').innerText = '🟡 Ponowne łączenie...';
-                    document.getElementById('status-badge').style.color = '#38bdf8';
-                });
             }
-
-            peer.on('open', () => {
-                connectToHost();
-                // Automatycznie ponawia próbę co 2.5s, jeśli pilot jeszcze nie jest aktywny
-                setInterval(connectToHost, 2500);
-            });
         }
 
-        function changeStep(delta) {
+        setInterval(checkServerStep, 1000);
+        checkServerStep();
+
+        // --- ZAPIS NOWEGO KROKU DO BAZY (Dla Pilota) ---
+        async function changeStep(delta) {
             if (!isPresenter) return;
             
-            currentStep += delta;
-            if (currentStep < 0) currentStep = 0;
-            if (currentStep > maxSteps) currentStep = maxSteps;
+            let next = currentStep + delta;
+            if (next < 0) next = 0;
+            if (next > maxSteps) next = maxSteps;
 
-            renderScene(currentStep);
+            const { error } = await supabaseClient
+                .from('presentation_state')
+                .update({ step: next })
+                .eq('id', 'main');
 
-            connections.forEach(conn => {
-                if (conn.open) {
-                    conn.send({ step: currentStep });
-                }
-            });
+            if (!error) {
+                currentStep = next;
+                renderScene(currentStep);
+            } else {
+                console.error("Błąd zapisu:", error);
+            }
         }
     </script>
 </body>
