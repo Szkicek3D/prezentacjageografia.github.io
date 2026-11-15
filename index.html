@@ -23,6 +23,7 @@
         #country-interior {
             position: fixed;
             inset: 0;
+            background-color: #0f172a;
             background-size: cover;
             background-position: center;
             opacity: 0;
@@ -36,14 +37,12 @@
             pointer-events: auto;
             transform: scale(1);
         }
-        /* Przyciemnienie u dołu zdjęcia dla czytelności tekstu */
         #country-interior::after {
             content: '';
             position: absolute;
             inset: 0;
             background: linear-gradient(to top, rgba(2, 6, 23, 0.95) 15%, rgba(2, 6, 23, 0.2) 60%, rgba(2, 6, 23, 0.5) 100%);
         }
-        /* Karta z treścią slajdu na dole ekranu */
         .ui-overlay {
             position: absolute;
             bottom: 20px;
@@ -110,7 +109,6 @@
 <body>
 
     <div id="globeViz"></div>
-    <!-- Warstwa wnętrza kraju (zdjęcie w wysokiej jakości) -->
     <div id="country-interior"></div>
 
     <div class="ui-overlay">
@@ -123,16 +121,19 @@
     </div>
 
     <script>
-        // --- KONFIGURACJA TWOJEGO KRAJU ---
         const TARGET_COUNTRY = {
             iso: 'EGY',
             name: 'Egipt',
             flagUrl: 'https://flagcdn.com/w80/eg.png',
             lat: 26.8206,
             lng: 30.8025,
-            // Zdjęcie krajobrazu po "wejściu" do kraju (tu: Egipt / Piramidy i Nil z Unsplash)
-            interiorImage: 'https://images.unsplash.com/photo-1539650116574-8efeb43e2750?auto=format&fit=crop&w=1600&q=80'
+            // Pewne zdjęcie z Wikimedia Commons (Piramidy w Gizie)
+            interiorImage: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/All_Gizah_Pyramids.jpg/1280px-All_Gizah_Pyramids.jpg'
         };
+
+        // Wstępne załadowanie zdjęcia w tle, żeby było gotowe od razu
+        const preloadImg = new Image();
+        preloadImg.src = TARGET_COUNTRY.interiorImage;
 
         let countriesData = [];
         let step = 0;
@@ -159,7 +160,6 @@
             const desc = document.getElementById('slide-desc');
             const interior = document.getElementById('country-interior');
 
-            // Reset widoku wnętrza przy cofaniu
             if (step < 3) {
                 interior.classList.remove('active');
             }
@@ -206,7 +206,6 @@
                 }, 1200);
             }
             else if (step === 2) {
-                // Powrót do widoku z orbity (jeśli ktoś wraca ze slajdu 3)
                 world.pointOfView({ 
                     lat: TARGET_COUNTRY.lat, 
                     lng: TARGET_COUNTRY.lng, 
@@ -216,22 +215,21 @@
                 desc.innerText = "Tutaj wpiszesz informacje z podręcznika. Kliknij „Dalej”, aby zanurkować w głąb kraju!";
             }
             else if (step === 3) {
-                // KROK 3: Mocne zbliżenie (nurkowanie w głąb kraju) i wejście na poziom ziemi
                 title.innerText = `Wewnątrz: ${TARGET_COUNTRY.name}`;
                 desc.innerText = "Jesteśmy na miejscu! Tutaj możesz opowiedzieć o kulturze, krajobrazie lub najważniejszych atrakcjach.";
                 
-                // 1. Kamera nurkuje tuż nad powierzchnię globusa (altitude: 0.04)
+                // Bezpieczne, mocne zbliżenie kamery
                 world.pointOfView({ 
                     lat: TARGET_COUNTRY.lat, 
                     lng: TARGET_COUNTRY.lng, 
-                    altitude: 0.04 
-                }, 1400);
+                    altitude: 0.12 
+                }, 1200);
 
-                // 2. W momencie, gdy kamera "przebija" chmury, płynnie wchodzi krajobraz kraju
+                // Płynne przejście w widok krajobrazu
                 setTimeout(() => {
                     interior.style.backgroundImage = `url('${TARGET_COUNTRY.interiorImage}')`;
                     interior.classList.add('active');
-                }, 1000);
+                }, 900);
             }
         }
 
