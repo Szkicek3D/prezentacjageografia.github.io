@@ -6,7 +6,7 @@
     <title>Interaktywna Prezentacja 3D - Afryka</title>
     <!-- Biblioteka Globe.gl -->
     <script src="https://unpkg.com/globe.gl"></script>
-    <!-- Biblioteka PeerJS do połączeń bezpośrednich na żywo -->
+    <!-- Biblioteka PeerJS -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
@@ -73,7 +73,7 @@
             color: #cbd5e1;
         }
         .controls {
-            display: none; /* Domyślnie ukryte dla klasy */
+            display: none;
             gap: 10px;
             margin-top: 15px;
         }
@@ -124,11 +124,10 @@
     <div id="country-interior"></div>
 
     <div class="ui-overlay">
-        <div class="live-badge" id="status-badge">🔴 P2P • Oczekiwanie na połączenie...</div>
+        <div class="live-badge" id="status-badge">🔴 Inicjalizacja...</div>
         <h2 id="slide-title">Planeta Ziemia</h2>
-        <p id="slide-desc">Trwa łączenie z prezentacją...</p>
+        <p id="slide-desc">Ładowanie widoku 3D...</p>
         
-        <!-- Przyciski widoczne tylko dla Ciebie -->
         <div class="controls" id="presenter-controls">
             <button onclick="changeStep(-1)">Wstecz</button>
             <button onclick="changeStep(1)">Dalej</button>
@@ -136,9 +135,8 @@
     </div>
 
     <script>
-        // STAŁE KONFIGURACJE
-        const SECRET_PIN = '1234'; // Twój tajny PIN w linku
-        const MASTER_PEER_ID = 'geografia-afryka-prowadzacy-unikalny-id-9988'; // Unikalny identyfikator pokoju
+        const SECRET_PIN = '1234'; 
+        const MASTER_PEER_ID = 'geografia-afryka-prowadzacy-unikalny-id-9988';
 
         const TARGET_COUNTRY = {
             iso: 'EGY',
@@ -156,20 +154,20 @@
         let currentStep = 0;
         const maxSteps = 3;
         let peer = null;
-        let connections = []; // Lista połączeń (dla prezentera)
-        let hostConnection = null; // Połączenie do szefa (dla ucznia)
+        let connections = []; 
+        let hostConnection = null; 
 
-        // Sprawdzamy czy to Ty (Prezenter)
+        // POPRAWIONE: Użycie prawidłowego nawiasu zamykającego `)`
         const urlParams = new URLSearchParams(window.location.search);
-        const isPresenter = urlParams.get('pilot'] === SECRET_PIN || urlParams.get('pilot') === SECRET_PIN; // zabezpieczenie literowe
+        const isPresenter = urlParams.get('pilot') === SECRET_PIN;
 
-        if (urlParams.get('pilot') === SECRET_PIN) {
+        if (isPresenter) {
             document.getElementById('presenter-controls').style.display = 'flex';
-            document.getElementById('status-badge').innerText = '👑 TRYB PREZENTERA (Sterujesz klasą)';
+            document.getElementById('status-badge').innerText = '👑 TRYB PREZENTERA';
             document.getElementById('status-badge').style.color = '#fbbf24';
         }
 
-        // Inicjalizacja globusa 3D
+        // Inicjalizacja globusa 3D (odpala się OD RAZU)
         const world = Globe()
             (document.getElementById('globeViz'))
             .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
@@ -184,7 +182,6 @@
             .then(res => res.json())
             .then(data => { countriesData = data.features; });
 
-        // Funkcja renderująca widok na ekranie
         function renderScene(step) {
             const title = document.getElementById('slide-title');
             const desc = document.getElementById('slide-desc');
@@ -196,7 +193,7 @@
 
             if (step === 0) {
                 title.innerText = "Planeta Ziemia";
-                desc.innerText = isPresenter ? "Kliknij „Dalej”, aby przenieść wszystkich do wybranego kraju." : "Prezentacja gotowa. Oczekiwanie na start...";
+                desc.innerText = isPresenter ? "Kliknij „Dalej”, aby przenieść wszystkich." : "Prezentacja gotowa. Oczekiwanie na start...";
                 world.polygonsData([]);
                 world.htmlElementsData([]);
                 world.controls().autoRotate = true;
@@ -249,32 +246,32 @@
             }
         }
 
-        // --- KONFIGURACJA SIECI P2P (PeerJS) ---
+        // Uruchomienie sceny od razu, żeby globus był widoczny
+        renderScene(0);
+
+        // --- KONFIGURACJA PEERJS ---
         if (isPresenter) {
-            // Twój telefon zakłada "pokój" jako główny serwer
             peer = new Peer(MASTER_PEER_ID);
 
             peer.on('open', () => {
-                document.getElementById('status-badge').innerText = '👑 PILOT AKTYWNY (Połączono z siecią)';
-                renderScene(currentStep);
+                document.getElementById('status-badge').innerText = '👑 PILOT AKTYWNY';
             });
 
-            // Gdy ktoś z klasy wchodzi na stronę, podłącza się do Ciebie
             peer.on('connection', (conn) => {
                 connections.push(conn);
-                // Wyślij mu aktualny krok na powitanie
                 conn.on('open', () => {
                     conn.send({ step: currentStep });
                 });
             });
 
             peer.on('error', (err) => {
-                console.error("Błąd pilota:", err);
-                // Jeśli ID jest zajęte, spróbuj otworzyć bez stałego ID lub zresetuj
+                console.log("PeerJS info:", err);
+                if(err.type === 'unavailable-id') {
+                    document.getElementById('status-badge').innerText = '👑 PILOT (ID zajęte - odśwież za 15s)';
+                }
             });
 
         } else {
-            // Telefon ucznia łączy się do Twojego telefonu
             peer = new Peer();
 
             peer.on('open', () => {
@@ -285,7 +282,6 @@
                     document.getElementById('status-badge').innerText = '🟢 POŁĄCZONO NA ŻYWO';
                 });
 
-                // Odbieranie zmian slajdów od Ciebie
                 conn.on('data', (data) => {
                     if (typeof data.step === 'number') {
                         currentStep = data.step;
@@ -294,12 +290,11 @@
                 });
 
                 conn.on('close', () => {
-                    document.getElementById('status-badge').innerText = '🔴 ROZŁĄCZONO (Oczekiwanie...)';
+                    document.getElementById('status-badge').innerText = '🔴 ROZŁĄCZONO';
                 });
             });
         }
 
-        // Funkcja zmiany slajdu (tylko dla Ciebie)
         function changeStep(delta) {
             if (!isPresenter) return;
             
@@ -307,19 +302,14 @@
             if (currentStep < 0) currentStep = 0;
             if (currentStep > maxSteps) currentStep = maxSteps;
 
-            // Renderuj u siebie
             renderScene(currentStep);
 
-            // Rozślij nowy krok do wszystkich połączonych uczniów w ułamku sekundy!
             connections.forEach(conn => {
                 if (conn.open) {
                     conn.send({ step: currentStep });
                 }
             });
         }
-
-        // Startowy widok
-        renderScene(0);
     </script>
 </body>
 </html>
