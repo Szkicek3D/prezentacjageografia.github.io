@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interaktywna Prezentacja 3D - Afryka</title>
-    <!-- Biblioteka Globe.gl -->
     <script src="https://unpkg.com/globe.gl"></script>
-    <!-- Biblioteka PeerJS -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
@@ -124,7 +122,7 @@
     <div id="country-interior"></div>
 
     <div class="ui-overlay">
-        <div class="live-badge" id="status-badge">🔴 Inicjalizacja...</div>
+        <div class="live-badge" id="status-badge">🟡 Szukanie prowadzącego...</div>
         <h2 id="slide-title">Planeta Ziemia</h2>
         <p id="slide-desc">Ładowanie widoku 3D...</p>
         
@@ -136,7 +134,7 @@
 
     <script>
         const SECRET_PIN = '1234'; 
-        const MASTER_PEER_ID = 'geografia-afryka-prowadzacy-unikalny-id-9988';
+        const MASTER_PEER_ID = 'geografia-afryka-szkicek3d-live-2026';
 
         const TARGET_COUNTRY = {
             iso: 'EGY',
@@ -157,17 +155,15 @@
         let connections = []; 
         let hostConnection = null; 
 
-        // POPRAWIONE: Użycie prawidłowego nawiasu zamykającego `)`
         const urlParams = new URLSearchParams(window.location.search);
         const isPresenter = urlParams.get('pilot') === SECRET_PIN;
 
         if (isPresenter) {
             document.getElementById('presenter-controls').style.display = 'flex';
-            document.getElementById('status-badge').innerText = '👑 TRYB PREZENTERA';
+            document.getElementById('status-badge').innerText = '👑 Uruchamianie pilota...';
             document.getElementById('status-badge').style.color = '#fbbf24';
         }
 
-        // Inicjalizacja globusa 3D (odpala się OD RAZU)
         const world = Globe()
             (document.getElementById('globeViz'))
             .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
@@ -246,52 +242,67 @@
             }
         }
 
-        // Uruchomienie sceny od razu, żeby globus był widoczny
         renderScene(0);
+
+        function updatePresenterCount() {
+            const activeCount = connections.filter(c => c.open).length;
+            document.getElementById('status-badge').innerText = `👑 PILOT AKTYWNY (Widzów: ${activeCount})`;
+        }
 
         // --- KONFIGURACJA PEERJS ---
         if (isPresenter) {
             peer = new Peer(MASTER_PEER_ID);
 
             peer.on('open', () => {
-                document.getElementById('status-badge').innerText = '👑 PILOT AKTYWNY';
+                updatePresenterCount();
             });
 
             peer.on('connection', (conn) => {
                 connections.push(conn);
                 conn.on('open', () => {
                     conn.send({ step: currentStep });
+                    updatePresenterCount();
                 });
+                conn.on('close', updatePresenterCount);
             });
 
             peer.on('error', (err) => {
-                console.log("PeerJS info:", err);
-                if(err.type === 'unavailable-id') {
-                    document.getElementById('status-badge').innerText = '👑 PILOT (ID zajęte - odśwież za 15s)';
+                if (err.type === 'unavailable-id') {
+                    document.getElementById('status-badge').innerText = '👑 PILOT (Zajęty - odśwież za 15s)';
                 }
             });
 
         } else {
             peer = new Peer();
 
-            peer.on('open', () => {
-                const conn = peer.connect(MASTER_PEER_ID);
+            function connectToHost() {
+                if (hostConnection && hostConnection.open) return;
+
+                const conn = peer.connect(MASTER_PEER_ID, { reliable: true });
                 hostConnection = conn;
 
                 conn.on('open', () => {
                     document.getElementById('status-badge').innerText = '🟢 POŁĄCZONO NA ŻYWO';
+                    document.getElementById('status-badge').style.color = '#4ade80';
                 });
 
                 conn.on('data', (data) => {
-                    if (typeof data.step === 'number') {
+                    if (typeof data.step === 'number' && data.step !== currentStep) {
                         currentStep = data.step;
                         renderScene(currentStep);
                     }
                 });
 
                 conn.on('close', () => {
-                    document.getElementById('status-badge').innerText = '🔴 ROZŁĄCZONO';
+                    document.getElementById('status-badge').innerText = '🟡 Ponowne łączenie...';
+                    document.getElementById('status-badge').style.color = '#38bdf8';
                 });
+            }
+
+            peer.on('open', () => {
+                connectToHost();
+                // Automatycznie ponawia próbę co 2.5s, jeśli pilot jeszcze nie jest aktywny
+                setInterval(connectToHost, 2500);
             });
         }
 
